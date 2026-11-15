@@ -46,25 +46,25 @@ export async function GET(request: Request) {
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-  const [{ total }] = await db
-    .select({ total: sql<number>`count(*)::int` })
-    .from(users)
-    .where(whereClause);
-
-  const rows = await db
-    .select()
-    .from(users)
-    .where(whereClause)
-    .orderBy(desc(users.createdAt))
-    .limit(limit)
-    .offset(offset);
-
-  const nextEmployeeCode = await generateNextCode(
-    users,
-    users.employeeCode,
-    "EMP",
-    getWibParts().yearMonth
-  );
+  const [[{ total }], rows, nextEmployeeCode] = await Promise.all([
+    db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(users)
+      .where(whereClause),
+    db
+      .select()
+      .from(users)
+      .where(whereClause)
+      .orderBy(desc(users.createdAt))
+      .limit(limit)
+      .offset(offset),
+    generateNextCode(
+      users,
+      users.employeeCode,
+      "EMP",
+      getWibParts().yearMonth
+    ),
+  ]);
 
   return NextResponse.json({
     users: rows.map(stripPasswordHash),

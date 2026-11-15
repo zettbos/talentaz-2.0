@@ -11,9 +11,21 @@ const plusJakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "TalentaZ 2.0 | Absensi Selfie & Monitoring Karyawan",
+  title: "TalentaZ 2.0 | Portal Absensi Internal Karyawan",
   description:
-    "Aplikasi absensi selfie dan lokasi GPS karyawan dengan persetujuan izin, lembur, potongan telat, dan laporan PDF Kop Surat serta Excel.",
+    "Portal internal absensi selfie dan geolokasi karyawan beserta manajemen izin, lembur, serta rekap kehadiran perusahaan.",
+  applicationName: "TalentaZ 2.0",
+  robots: {
+    index: false,
+    follow: false,
+  },
+  ...(process.env.GOOGLE_SITE_VERIFICATION
+    ? {
+        verification: {
+          google: process.env.GOOGLE_SITE_VERIFICATION,
+        },
+      }
+    : {}),
 };
 
 export const viewport: Viewport = {

@@ -10,7 +10,7 @@ import {
   formatRupiah,
   getWibParts,
 } from "@/lib/time";
-import { AppShell } from "./AppShell";
+import { useProtectedShell, useSyncShellMeta } from "./ProtectedShellContext";
 import { useDataCache } from "./DataCacheContext";
 import { useToast } from "./ToastContext";
 import { Modal } from "./Modal";
@@ -81,7 +81,13 @@ interface OvertimeListPayload {
   overtimeHourlyRate: number;
 }
 
-export function PengajuanClient({ initialUser }: { initialUser: SafeUser }) {
+export function PengajuanClient({
+  initialUser: initialUserProp,
+}: {
+  initialUser?: SafeUser;
+}) {
+  const { user: shellUser } = useProtectedShell();
+  const initialUser = initialUserProp ?? shellUser;
   const { invalidatePrefix } = useDataCache();
   const { showToast } = useToast();
   const isAdmin = initialUser.role === "admin";
@@ -399,16 +405,17 @@ export function PengajuanClient({ initialUser }: { initialUser: SafeUser }) {
     }
   }
 
+  useSyncShellMeta({
+    onRefresh: () => {
+      invalidatePrefix("leaves");
+      invalidatePrefix("overtimes");
+      void loadLeaves();
+      void loadOvertimes();
+    },
+  });
+
   return (
-    <AppShell
-      user={initialUser}
-      onRefresh={() => {
-        invalidatePrefix("leaves");
-        invalidatePrefix("overtimes");
-        void loadLeaves();
-        void loadOvertimes();
-      }}
-    >
+    <>
       <div className="space-y-6">
         {/* Header & Tab Bar */}
         <section className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1326,6 +1333,6 @@ export function PengajuanClient({ initialUser }: { initialUser: SafeUser }) {
           </div>
         )}
       </Modal>
-    </AppShell>
+    </>
   );
 }

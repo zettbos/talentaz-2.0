@@ -2,7 +2,6 @@ import { and, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { attendances, companySettings, users } from "@/db/schema";
-import { ensureInitialized } from "@/db/seed";
 import {
   jsonError,
   parsePositiveInt,
@@ -21,7 +20,6 @@ export async function GET(request: Request) {
   const auth = await requireAuth();
   if (auth.error) return auth.error;
 
-  await ensureInitialized();
   const { searchParams } = new URL(request.url);
   const q = sanitizeString(searchParams.get("q") ?? "", 80);
   const dateFilter = sanitizeString(searchParams.get("date") ?? "", 10);
@@ -31,15 +29,6 @@ export async function GET(request: Request) {
   const offset = (page - 1) * limit;
 
   const wibToday = getWibParts().workDate;
-  const [settings] = await db.select().from(companySettings).limit(1);
-
-  const [todayRecord] = await db
-    .select()
-    .from(attendances)
-    .where(
-      and(eq(attendances.userId, auth.user.id), eq(attendances.workDate, wibToday))
-    )
-    .limit(1);
 
   const conditions: SQL[] = [];
   if (auth.user.role !== "admin") {
@@ -72,44 +61,53 @@ export async function GET(request: Request) {
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-  const [{ total }] = await db
-    .select({ total: sql<number>`count(*)::int` })
-    .from(attendances)
-    .innerJoin(users, eq(attendances.userId, users.id))
-    .where(whereClause);
-
-  const rows = await db
-    .select({
-      id: attendances.id,
-      attendanceCode: attendances.attendanceCode,
-      workDate: attendances.workDate,
-      userId: attendances.userId,
-      employeeCode: users.employeeCode,
-      fullName: users.fullName,
-      position: users.position,
-      clockInAt: attendances.clockInAt,
-      clockOutAt: attendances.clockOutAt,
-      clockInPhoto: attendances.clockInPhoto,
-      clockOutPhoto: attendances.clockOutPhoto,
-      clockInLat: attendances.clockInLat,
-      clockInLng: attendances.clockInLng,
-      clockInDistanceMeters: attendances.clockInDistanceMeters,
-      clockOutDistanceMeters: attendances.clockOutDistanceMeters,
-      isLate: attendances.isLate,
-      lateMinutes: attendances.lateMinutes,
-      lateReason: attendances.lateReason,
-      isOutsideIn: attendances.isOutsideIn,
-      outsideInReason: attendances.outsideInReason,
-      isOutsideOut: attendances.isOutsideOut,
-      outsideOutReason: attendances.outsideOutReason,
-      penaltyAmount: attendances.penaltyAmount,
-    })
-    .from(attendances)
-    .innerJoin(users, eq(attendances.userId, users.id))
-    .where(whereClause)
-    .orderBy(desc(attendances.workDate), desc(attendances.id))
-    .limit(limit)
-    .offset(offset);
+  const [[settings], [todayRecord], [{ total }], rows] = await Promise.all([
+    db.select().from(companySettings).limit(1),
+    db
+      .select()
+      .from(attendances)
+      .where(
+        and(eq(attendances.userId, auth.user.id), eq(attendances.workDate, wibToday))
+      )
+      .limit(1),
+    db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(attendances)
+      .innerJoin(users, eq(attendances.userId, users.id))
+      .where(whereClause),
+    db
+      .select({
+        id: attendances.id,
+        attendanceCode: attendances.attendanceCode,
+        workDate: attendances.workDate,
+        userId: attendances.userId,
+        employeeCode: users.employeeCode,
+        fullName: users.fullName,
+        position: users.position,
+        clockInAt: attendances.clockInAt,
+        clockOutAt: attendances.clockOutAt,
+        clockInPhoto: attendances.clockInPhoto,
+        clockOutPhoto: attendances.clockOutPhoto,
+        clockInLat: attendances.clockInLat,
+        clockInLng: attendances.clockInLng,
+        clockInDistanceMeters: attendances.clockInDistanceMeters,
+        clockOutDistanceMeters: attendances.clockOutDistanceMeters,
+        isLate: attendances.isLate,
+        lateMinutes: attendances.lateMinutes,
+        lateReason: attendances.lateReason,
+        isOutsideIn: attendances.isOutsideIn,
+        outsideInReason: attendances.outsideInReason,
+        isOutsideOut: attendances.isOutsideOut,
+        outsideOutReason: attendances.outsideOutReason,
+        penaltyAmount: attendances.penaltyAmount,
+      })
+      .from(attendances)
+      .innerJoin(users, eq(attendances.userId, users.id))
+      .where(whereClause)
+      .orderBy(desc(attendances.workDate), desc(attendances.id))
+      .limit(limit)
+      .offset(offset),
+  ]);
 
   return NextResponse.json({
     today: todayRecord ?? null,
@@ -130,7 +128,6 @@ export async function POST(request: Request) {
   if (auth.error) return auth.error;
 
   try {
-    await ensureInitialized();
     const body = await request.json();
     const action = body.action === "clock_out" ? "clock_out" : "clock_in";
     const photoDataUrl = typeof body.photoDataUrl === "string" ? body.photoDataUrl : "";

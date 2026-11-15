@@ -2,7 +2,6 @@ import { and, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { companySettings, overtimeRequests, users } from "@/db/schema";
-import { ensureInitialized } from "@/db/seed";
 import {
   jsonError,
   parsePositiveInt,
@@ -16,7 +15,6 @@ export async function GET(request: Request) {
   const auth = await requireAuth();
   if (auth.error) return auth.error;
 
-  await ensureInitialized();
   const { searchParams } = new URL(request.url);
   const q = sanitizeString(searchParams.get("q") ?? "", 80);
   const statusFilter = sanitizeString(searchParams.get("status") ?? "all", 20);
@@ -44,45 +42,45 @@ export async function GET(request: Request) {
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-  const [{ total }] = await db
-    .select({ total: sql<number>`count(*)::int` })
-    .from(overtimeRequests)
-    .innerJoin(users, eq(overtimeRequests.userId, users.id))
-    .where(whereClause);
-
-  const rows = await db
-    .select({
-      id: overtimeRequests.id,
-      overtimeCode: overtimeRequests.overtimeCode,
-      userId: overtimeRequests.userId,
-      employeeCode: users.employeeCode,
-      fullName: users.fullName,
-      position: users.position,
-      overtimeDate: overtimeRequests.overtimeDate,
-      startTime: overtimeRequests.startTime,
-      endTime: overtimeRequests.endTime,
-      durationMinutes: overtimeRequests.durationMinutes,
-      taskDescription: overtimeRequests.taskDescription,
-      estimatedPay: overtimeRequests.estimatedPay,
-      status: overtimeRequests.status,
-      reviewNote: overtimeRequests.reviewNote,
-      reviewedAt: overtimeRequests.reviewedAt,
-      createdAt: overtimeRequests.createdAt,
-    })
-    .from(overtimeRequests)
-    .innerJoin(users, eq(overtimeRequests.userId, users.id))
-    .where(whereClause)
-    .orderBy(desc(overtimeRequests.createdAt))
-    .limit(limit)
-    .offset(offset);
-
-  const [settings] = await db.select().from(companySettings).limit(1);
-  const nextOvertimeCode = await generateNextCode(
-    overtimeRequests,
-    overtimeRequests.overtimeCode,
-    "LMB",
-    getWibParts().yearMonth
-  );
+  const [[{ total }], rows, [settings], nextOvertimeCode] = await Promise.all([
+    db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(overtimeRequests)
+      .innerJoin(users, eq(overtimeRequests.userId, users.id))
+      .where(whereClause),
+    db
+      .select({
+        id: overtimeRequests.id,
+        overtimeCode: overtimeRequests.overtimeCode,
+        userId: overtimeRequests.userId,
+        employeeCode: users.employeeCode,
+        fullName: users.fullName,
+        position: users.position,
+        overtimeDate: overtimeRequests.overtimeDate,
+        startTime: overtimeRequests.startTime,
+        endTime: overtimeRequests.endTime,
+        durationMinutes: overtimeRequests.durationMinutes,
+        taskDescription: overtimeRequests.taskDescription,
+        estimatedPay: overtimeRequests.estimatedPay,
+        status: overtimeRequests.status,
+        reviewNote: overtimeRequests.reviewNote,
+        reviewedAt: overtimeRequests.reviewedAt,
+        createdAt: overtimeRequests.createdAt,
+      })
+      .from(overtimeRequests)
+      .innerJoin(users, eq(overtimeRequests.userId, users.id))
+      .where(whereClause)
+      .orderBy(desc(overtimeRequests.createdAt))
+      .limit(limit)
+      .offset(offset),
+    db.select().from(companySettings).limit(1),
+    generateNextCode(
+      overtimeRequests,
+      overtimeRequests.overtimeCode,
+      "LMB",
+      getWibParts().yearMonth
+    ),
+  ]);
 
   return NextResponse.json({
     requests: rows,
@@ -99,7 +97,6 @@ export async function POST(request: Request) {
   if (auth.error) return auth.error;
 
   try {
-    await ensureInitialized();
     const body = await request.json();
     const overtimeDate = sanitizeString(body.overtimeDate, 10);
     const startTime = sanitizeString(body.startTime, 5);

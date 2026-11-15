@@ -12,7 +12,7 @@ import {
   getWibParts,
 } from "@/lib/time";
 import { useCachedQuery } from "@/lib/use-cached-query";
-import { AppShell } from "./AppShell";
+import { useProtectedShell, useSyncShellMeta } from "./ProtectedShellContext";
 import { useDataCache } from "./DataCacheContext";
 import { useToast } from "./ToastContext";
 import { Modal } from "./Modal";
@@ -98,7 +98,13 @@ interface AttendanceListPayload {
   totalPages: number;
 }
 
-export function AbsenClient({ initialUser }: { initialUser: SafeUser }) {
+export function AbsenClient({
+  initialUser: initialUserProp,
+}: {
+  initialUser?: SafeUser;
+}) {
+  const { user: shellUser } = useProtectedShell();
+  const initialUser = initialUserProp ?? shellUser;
   const { invalidatePrefix } = useDataCache();
   const { showToast } = useToast();
 
@@ -401,15 +407,16 @@ export function AbsenClient({ initialUser }: { initialUser: SafeUser }) {
     setQ(searchInput.trim());
   }
 
+  useSyncShellMeta({
+    companyName: settings?.companyName ?? "TalentaZ 2.0",
+    onRefresh: () => {
+      invalidatePrefix("attendances");
+      void loadAttendances();
+    },
+  });
+
   return (
-    <AppShell
-      user={initialUser}
-      companyName={settings?.companyName ?? "TalentaZ 2.0"}
-      onRefresh={() => {
-        invalidatePrefix("attendances");
-        void loadAttendances();
-      }}
-    >
+    <>
       <div className="space-y-6">
         {/* Top Page Title & Live Clock */}
         <section className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1108,6 +1115,6 @@ export function AbsenClient({ initialUser }: { initialUser: SafeUser }) {
           </div>
         )}
       </Modal>
-    </AppShell>
+    </>
   );
 }

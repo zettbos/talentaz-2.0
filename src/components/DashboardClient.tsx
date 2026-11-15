@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { SafeUser } from "@/lib/auth";
 import { formatMinutesAsHours, formatRupiah } from "@/lib/time";
 import { useCachedQuery } from "@/lib/use-cached-query";
-import { AppShell } from "./AppShell";
+import { useProtectedShell, useSyncShellMeta } from "./ProtectedShellContext";
 import { useDataCache } from "./DataCacheContext";
 import { useToast } from "./ToastContext";
 import { Modal } from "./Modal";
@@ -144,7 +144,13 @@ function getInitials(name: string): string {
     .join("");
 }
 
-export function DashboardClient({ initialUser }: { initialUser: SafeUser }) {
+export function DashboardClient({
+  initialUser: initialUserProp,
+}: {
+  initialUser?: SafeUser;
+}) {
+  const { user: shellUser } = useProtectedShell();
+  const initialUser = initialUserProp ?? shellUser;
   const { invalidatePrefix } = useDataCache();
   const { showToast } = useToast();
 
@@ -290,16 +296,18 @@ export function DashboardClient({ initialUser }: { initialUser: SafeUser }) {
       ? "Absen Pulang Sekarang"
       : "Absensi Hari Ini Selesai";
 
+  useSyncShellMeta({
+    user: data?.user,
+    companyName: data?.settings?.companyName ?? "TalentaZ 2.0",
+    pendingCount: data?.kpis.pendingTotal ?? 0,
+    onRefresh: () => {
+      invalidatePrefix("dashboard");
+      void loadDashboard();
+    },
+  });
+
   return (
-    <AppShell
-      user={activeUser}
-      companyName={data?.settings?.companyName ?? "TalentaZ 2.0"}
-      pendingCount={data?.kpis.pendingTotal ?? 0}
-      onRefresh={() => {
-        invalidatePrefix("dashboard");
-        void loadDashboard();
-      }}
-    >
+    <>
       {loading && !data ? (
         <div className="space-y-5" aria-busy="true" aria-label="Memuat dashboard">
           <div className="h-24 rounded-3xl bg-white/75 animate-pulse" />
@@ -1217,6 +1225,6 @@ export function DashboardClient({ initialUser }: { initialUser: SafeUser }) {
           </form>
         )}
       </Modal>
-    </AppShell>
+    </>
   );
 }

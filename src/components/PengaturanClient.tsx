@@ -2,10 +2,16 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import type { SafeUser } from "@/lib/auth";
 import { compressLogoOrAvatar } from "@/lib/media-client";
+import {
+  DEFAULT_SETTINGS_FORM,
+  normalizeCompanySettings,
+  type SettingsFormState,
+} from "@/lib/settings-defaults";
 import { formatRupiah } from "@/lib/time";
-import { AppShell } from "./AppShell";
+import { useProtectedShell, useSyncShellMeta } from "./ProtectedShellContext";
 import { useDataCache } from "./DataCacheContext";
 import { useToast } from "./ToastContext";
 import { MapPinIcon, SlidersIcon, UploadIcon } from "./Icons";
@@ -19,72 +25,31 @@ const LeafletPicker = dynamic(() => import("@/components/LeafletPicker"), {
   ),
 });
 
-interface SettingsFormState {
-  companyName: string;
-  companyTagline: string;
-  companyAddress: string;
-  companyContact: string;
-  leaderName: string;
-  leaderTitle: string;
-  logoDataUrl: string | null;
-  officeLat: number;
-  officeLng: number;
-  radiusMeters: number;
-  workStartTime: string;
-  workEndTime: string;
-  lateGraceMinutes: number;
-  latePenaltyAmount: number;
-  overtimeHourlyRate: number;
-}
-
-const DEFAULT_FORM: SettingsFormState = {
-  companyName: "TalentaZ 2.0",
-  companyTagline: "Sistem Kehadiran & Operasional SDM",
-  companyAddress: "Jl. Merdeka No. 1, Jakarta Pusat",
-  companyContact: "Telp: (021) 555-0199 | Email: hr@talentaz.local",
-  leaderName: "Pimpinan Perusahaan",
-  leaderTitle: "Direktur Operasional",
-  logoDataUrl: null,
-  officeLat: -6.175392,
-  officeLng: 106.827153,
-  radiusMeters: 150,
-  workStartTime: "08:00",
-  workEndTime: "17:00",
-  lateGraceMinutes: 10,
-  latePenaltyAmount: 25000,
-  overtimeHourlyRate: 25000,
-};
-
-export function PengaturanClient({ initialUser }: { initialUser: SafeUser }) {
+export function PengaturanClient({
+  initialUser: initialUserProp,
+}: {
+  initialUser?: SafeUser;
+}) {
+  const router = useRouter();
+  const { user: shellUser } = useProtectedShell();
+  const initialUser = initialUserProp ?? shellUser;
   const { getCached, setCached, invalidatePrefix, cacheVersion } = useDataCache();
   const { showToast } = useToast();
 
+  useEffect(() => {
+    if (initialUser.role !== "admin") {
+      router.replace("/dashboard");
+    }
+  }, [initialUser.role, router]);
+
   const [form, setForm] = useState<SettingsFormState>(() => {
     const cached = getCached<SettingsFormState>("settings");
-    return cached ?? DEFAULT_FORM;
+    return cached ?? DEFAULT_SETTINGS_FORM;
   });
   const [loading, setLoading] = useState<boolean>(() => !getCached("settings"));
   const [errorMsg, setErrorMsg] = useState("");
   const [saving, setSaving] = useState(false);
   const [locatingSelf, setLocatingSelf] = useState(false);
-
-  const normalizeSettings = useCallback((s: SettingsFormState): SettingsFormState => ({
-    companyName: s.companyName,
-    companyTagline: s.companyTagline,
-    companyAddress: s.companyAddress,
-    companyContact: s.companyContact,
-    leaderName: s.leaderName,
-    leaderTitle: s.leaderTitle,
-    logoDataUrl: s.logoDataUrl ?? null,
-    officeLat: Number(s.officeLat),
-    officeLng: Number(s.officeLng),
-    radiusMeters: Number(s.radiusMeters),
-    workStartTime: s.workStartTime,
-    workEndTime: s.workEndTime,
-    lateGraceMinutes: Number(s.lateGraceMinutes),
-    latePenaltyAmount: Number(s.latePenaltyAmount),
-    overtimeHourlyRate: Number(s.overtimeHourlyRate),
-  }), []);
 
   const fetchSettingsNow = useCallback(async () => {
     setLoading(true);
@@ -96,7 +61,9 @@ export function PengaturanClient({ initialUser }: { initialUser: SafeUser }) {
         throw new Error(json.error || "Gagal memuat pengaturan.");
       }
       if (json.settings) {
-        const normalized = normalizeSettings(json.settings as SettingsFormState);
+        const normalized = normalizeCompanySettings(
+          json.settings as Record<string, unknown>
+        );
         setCached("settings", normalized);
         setForm(normalized);
       }
@@ -107,7 +74,7 @@ export function PengaturanClient({ initialUser }: { initialUser: SafeUser }) {
     } finally {
       setLoading(false);
     }
-  }, [normalizeSettings, setCached]);
+  }, [setCached]);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,7 +107,9 @@ export function PengaturanClient({ initialUser }: { initialUser: SafeUser }) {
         }
         if (cancelled) return;
         if (json.settings) {
-          const normalized = normalizeSettings(json.settings as SettingsFormState);
+          const normalized = normalizeCompanySettings(
+            json.settings as Record<string, unknown>
+          );
           setCached("settings", normalized);
           setForm(normalized);
         }
@@ -159,7 +128,7 @@ export function PengaturanClient({ initialUser }: { initialUser: SafeUser }) {
     return () => {
       cancelled = true;
     };
-  }, [cacheVersion, getCached, normalizeSettings, setCached]);
+  }, [cacheVersion, getCached, setCached]);
 
   function handleUseCurrentLocation() {
     if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
@@ -236,15 +205,20 @@ export function PengaturanClient({ initialUser }: { initialUser: SafeUser }) {
     }
   }
 
+  useSyncShellMeta({
+    companyName: form.companyName,
+    onRefresh: () => {
+      invalidatePrefix("settings");
+      void fetchSettingsNow();
+    },
+  });
+
+  if (initialUser.role !== "admin") {
+    return null;
+  }
+
   return (
-    <AppShell
-      user={initialUser}
-      companyName={form.companyName}
-      onRefresh={() => {
-        invalidatePrefix("settings");
-        void fetchSettingsNow();
-      }}
-    >
+    <>
       <form onSubmit={handleSubmit} className="space-y-6">
         <section className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -758,6 +732,6 @@ export function PengaturanClient({ initialUser }: { initialUser: SafeUser }) {
           </div>
         )}
       </form>
-    </AppShell>
+    </>
   );
 }

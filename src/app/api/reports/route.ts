@@ -8,7 +8,6 @@ import {
   overtimeRequests,
   users,
 } from "@/db/schema";
-import { ensureInitialized } from "@/db/seed";
 import { parsePositiveInt, requireAuth, sanitizeString } from "@/lib/api-helpers";
 import type {
   DailyAttendanceRow,
@@ -48,7 +47,6 @@ export async function GET(request: Request) {
   const auth = await requireAuth();
   if (auth.error) return auth.error;
 
-  await ensureInitialized();
   const { searchParams } = new URL(request.url);
   const wibToday = getWibParts().workDate;
   const defaultMonth = wibToday.slice(0, 7);
@@ -85,18 +83,6 @@ export async function GET(request: Request) {
     if (searchClause) userConditions.push(searchClause);
   }
 
-  const targetUsers = await db
-    .select({
-      id: users.id,
-      employeeCode: users.employeeCode,
-      fullName: users.fullName,
-      position: users.position,
-      baseSalary: users.baseSalary,
-    })
-    .from(users)
-    .where(and(...userConditions))
-    .orderBy(users.employeeCode);
-
   const periodAttendanceConditions: SQL[] = [
     gte(attendances.workDate, startDate),
     lte(attendances.workDate, endDate),
@@ -104,18 +90,6 @@ export async function GET(request: Request) {
   if (auth.user.role !== "admin") {
     periodAttendanceConditions.push(eq(attendances.userId, auth.user.id));
   }
-
-  const periodAttendances = await db
-    .select({
-      userId: attendances.userId,
-      isLate: attendances.isLate,
-      lateMinutes: attendances.lateMinutes,
-      isOutsideIn: attendances.isOutsideIn,
-      isOutsideOut: attendances.isOutsideOut,
-      penaltyAmount: attendances.penaltyAmount,
-    })
-    .from(attendances)
-    .where(and(...periodAttendanceConditions));
 
   const leaveConditions: SQL[] = [
     eq(leaveRequests.status, "approved"),
@@ -125,14 +99,6 @@ export async function GET(request: Request) {
   if (auth.user.role !== "admin") {
     leaveConditions.push(eq(leaveRequests.userId, auth.user.id));
   }
-  const approvedLeaves = await db
-    .select({
-      userId: leaveRequests.userId,
-      startDate: leaveRequests.startDate,
-      endDate: leaveRequests.endDate,
-    })
-    .from(leaveRequests)
-    .where(and(...leaveConditions));
 
   const overtimeConditions: SQL[] = [
     eq(overtimeRequests.status, "approved"),
@@ -142,14 +108,122 @@ export async function GET(request: Request) {
   if (auth.user.role !== "admin") {
     overtimeConditions.push(eq(overtimeRequests.userId, auth.user.id));
   }
-  const approvedOvertimes = await db
+
+  // Paginated daily attendance logs matching filters.
+  const logConditions: SQL[] = [
+    gte(attendances.workDate, startDate),
+    lte(attendances.workDate, endDate),
+  ];
+  if (auth.user.role !== "admin") {
+    logConditions.push(eq(attendances.userId, auth.user.id));
+  }
+  if (statusFilter === "late") {
+    logConditions.push(eq(attendances.isLate, true));
+  } else if (statusFilter === "outside") {
+    const outClause = or(
+      eq(attendances.isOutsideIn, true),
+      eq(attendances.isOutsideOut, true)
+    );
+    if (outClause) logConditions.push(outClause);
+  } else if (statusFilter === "ontime") {
+    logConditions.push(eq(attendances.isLate, false));
+  }
+  if (q) {
+    const pattern = `%${q}%`;
+    const searchClause = or(
+      ilike(users.fullName, pattern),
+      ilike(users.employeeCode, pattern),
+      ilike(attendances.attendanceCode, pattern)
+    );
+    if (searchClause) logConditions.push(searchClause);
+  }
+
+  const logWhere = and(...logConditions);
+
+  const logQuery = db
     .select({
-      userId: overtimeRequests.userId,
-      durationMinutes: overtimeRequests.durationMinutes,
-      estimatedPay: overtimeRequests.estimatedPay,
+      id: attendances.id,
+      attendanceCode: attendances.attendanceCode,
+      workDate: attendances.workDate,
+      userId: attendances.userId,
+      employeeCode: users.employeeCode,
+      fullName: users.fullName,
+      position: users.position,
+      clockInAt: attendances.clockInAt,
+      clockOutAt: attendances.clockOutAt,
+      clockInDistanceMeters: attendances.clockInDistanceMeters,
+      clockOutDistanceMeters: attendances.clockOutDistanceMeters,
+      isLate: attendances.isLate,
+      lateMinutes: attendances.lateMinutes,
+      lateReason: attendances.lateReason,
+      isOutsideIn: attendances.isOutsideIn,
+      outsideInReason: attendances.outsideInReason,
+      isOutsideOut: attendances.isOutsideOut,
+      outsideOutReason: attendances.outsideOutReason,
+      penaltyAmount: attendances.penaltyAmount,
+      clockInPhoto: attendances.clockInPhoto,
+      clockOutPhoto: attendances.clockOutPhoto,
     })
-    .from(overtimeRequests)
-    .where(and(...overtimeConditions));
+    .from(attendances)
+    .innerJoin(users, eq(attendances.userId, users.id))
+    .where(logWhere)
+    .orderBy(desc(attendances.workDate), desc(attendances.id));
+
+  const [
+    targetUsers,
+    periodAttendances,
+    approvedLeaves,
+    approvedOvertimes,
+    [{ totalLogs }],
+    rawLogs,
+    [settings],
+  ] = await Promise.all([
+    db
+      .select({
+        id: users.id,
+        employeeCode: users.employeeCode,
+        fullName: users.fullName,
+        position: users.position,
+        baseSalary: users.baseSalary,
+      })
+      .from(users)
+      .where(and(...userConditions))
+      .orderBy(users.employeeCode),
+    db
+      .select({
+        userId: attendances.userId,
+        isLate: attendances.isLate,
+        lateMinutes: attendances.lateMinutes,
+        isOutsideIn: attendances.isOutsideIn,
+        isOutsideOut: attendances.isOutsideOut,
+        penaltyAmount: attendances.penaltyAmount,
+      })
+      .from(attendances)
+      .where(and(...periodAttendanceConditions)),
+    db
+      .select({
+        userId: leaveRequests.userId,
+        startDate: leaveRequests.startDate,
+        endDate: leaveRequests.endDate,
+      })
+      .from(leaveRequests)
+      .where(and(...leaveConditions)),
+    db
+      .select({
+        userId: overtimeRequests.userId,
+        durationMinutes: overtimeRequests.durationMinutes,
+        estimatedPay: overtimeRequests.estimatedPay,
+      })
+      .from(overtimeRequests)
+      .where(and(...overtimeConditions)),
+    db
+      .select({ totalLogs: sql<number>`count(*)::int` })
+      .from(attendances)
+      .innerJoin(users, eq(attendances.userId, users.id))
+      .where(logWhere),
+    exportAll ? logQuery : logQuery.limit(limit).offset(offset),
+    db.select().from(companySettings).limit(1),
+  ]);
 
   const summaryRows: PayrollSummaryRow[] = targetUsers.map((emp) => {
     const empAtt = periodAttendances.filter((a) => a.userId === emp.id);
@@ -189,76 +263,6 @@ export async function GET(request: Request) {
     };
   });
 
-  // Paginated daily attendance logs matching filters.
-  const logConditions: SQL[] = [
-    gte(attendances.workDate, startDate),
-    lte(attendances.workDate, endDate),
-  ];
-  if (auth.user.role !== "admin") {
-    logConditions.push(eq(attendances.userId, auth.user.id));
-  }
-  if (statusFilter === "late") {
-    logConditions.push(eq(attendances.isLate, true));
-  } else if (statusFilter === "outside") {
-    const outClause = or(
-      eq(attendances.isOutsideIn, true),
-      eq(attendances.isOutsideOut, true)
-    );
-    if (outClause) logConditions.push(outClause);
-  } else if (statusFilter === "ontime") {
-    logConditions.push(eq(attendances.isLate, false));
-  }
-  if (q) {
-    const pattern = `%${q}%`;
-    const searchClause = or(
-      ilike(users.fullName, pattern),
-      ilike(users.employeeCode, pattern),
-      ilike(attendances.attendanceCode, pattern)
-    );
-    if (searchClause) logConditions.push(searchClause);
-  }
-
-  const logWhere = and(...logConditions);
-
-  const [{ totalLogs }] = await db
-    .select({ totalLogs: sql<number>`count(*)::int` })
-    .from(attendances)
-    .innerJoin(users, eq(attendances.userId, users.id))
-    .where(logWhere);
-
-  const logQuery = db
-    .select({
-      id: attendances.id,
-      attendanceCode: attendances.attendanceCode,
-      workDate: attendances.workDate,
-      userId: attendances.userId,
-      employeeCode: users.employeeCode,
-      fullName: users.fullName,
-      position: users.position,
-      clockInAt: attendances.clockInAt,
-      clockOutAt: attendances.clockOutAt,
-      clockInDistanceMeters: attendances.clockInDistanceMeters,
-      clockOutDistanceMeters: attendances.clockOutDistanceMeters,
-      isLate: attendances.isLate,
-      lateMinutes: attendances.lateMinutes,
-      lateReason: attendances.lateReason,
-      isOutsideIn: attendances.isOutsideIn,
-      outsideInReason: attendances.outsideInReason,
-      isOutsideOut: attendances.isOutsideOut,
-      outsideOutReason: attendances.outsideOutReason,
-      penaltyAmount: attendances.penaltyAmount,
-      clockInPhoto: attendances.clockInPhoto,
-      clockOutPhoto: attendances.clockOutPhoto,
-    })
-    .from(attendances)
-    .innerJoin(users, eq(attendances.userId, users.id))
-    .where(logWhere)
-    .orderBy(desc(attendances.workDate), desc(attendances.id));
-
-  const rawLogs = exportAll
-    ? await logQuery
-    : await logQuery.limit(limit).offset(offset);
-
   const dailyLogs: DailyAttendanceRow[] = rawLogs.map((row) => ({
     ...row,
     clockInAt: row.clockInAt ? row.clockInAt.toISOString() : null,
@@ -267,7 +271,6 @@ export async function GET(request: Request) {
     clockOutTime: formatWibTimeShort(row.clockOutAt),
   }));
 
-  const [settings] = await db.select().from(companySettings).limit(1);
   const kopSurat: KopSuratMeta = {
     companyName: settings?.companyName ?? "TalentaZ 2.0",
     companyTagline: settings?.companyTagline ?? "Sistem Kehadiran & Operasional SDM",

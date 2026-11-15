@@ -14,7 +14,7 @@ import type {
   PayrollSummaryRow,
 } from "@/lib/report-types";
 import { formatMinutesAsHours, formatRupiah, getWibParts } from "@/lib/time";
-import { AppShell } from "./AppShell";
+import { useProtectedShell, useSyncShellMeta } from "./ProtectedShellContext";
 import { useDataCache } from "./DataCacheContext";
 import { useToast } from "./ToastContext";
 import { Modal } from "./Modal";
@@ -36,7 +36,13 @@ interface ReportsPayload {
   kopSurat: KopSuratMeta;
 }
 
-export function RekapClient({ initialUser }: { initialUser: SafeUser }) {
+export function RekapClient({
+  initialUser: initialUserProp,
+}: {
+  initialUser?: SafeUser;
+}) {
+  const { user: shellUser } = useProtectedShell();
+  const initialUser = initialUserProp ?? shellUser;
   const { invalidatePrefix } = useDataCache();
   const { showToast } = useToast();
   const defaultMonth = useMemo(() => getWibParts().workDate.slice(0, 7), []);
@@ -167,15 +173,16 @@ export function RekapClient({ initialUser }: { initialUser: SafeUser }) {
     return payload.summaryRows.reduce((s, r) => s + r.totalOvertimePay, 0);
   }, [payload]);
 
+  useSyncShellMeta({
+    companyName: payload?.kopSurat.companyName ?? "TalentaZ 2.0",
+    onRefresh: () => {
+      invalidatePrefix("reports");
+      void loadReports();
+    },
+  });
+
   return (
-    <AppShell
-      user={initialUser}
-      companyName={payload?.kopSurat.companyName ?? "TalentaZ 2.0"}
-      onRefresh={() => {
-        invalidatePrefix("reports");
-        void loadReports();
-      }}
-    >
+    <>
       <div className="space-y-6">
         {/* Title & Export Controls */}
         <section className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -742,6 +749,6 @@ export function RekapClient({ initialUser }: { initialUser: SafeUser }) {
           </div>
         )}
       </Modal>
-    </AppShell>
+    </>
   );
 }

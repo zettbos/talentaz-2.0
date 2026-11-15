@@ -2,7 +2,6 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { companySettings } from "@/db/schema";
-import { ensureInitialized } from "@/db/seed";
 import {
   jsonError,
   requireAdminAuth,
@@ -14,7 +13,6 @@ export async function GET() {
   const auth = await requireAuth();
   if (auth.error) return auth.error;
 
-  await ensureInitialized();
   const [settings] = await db.select().from(companySettings).limit(1);
   return NextResponse.json({ settings: settings ?? null });
 }
@@ -24,7 +22,6 @@ export async function PATCH(request: Request) {
   if (auth.error) return auth.error;
 
   try {
-    await ensureInitialized();
     const body = await request.json();
 
     const companyName = sanitizeString(body.companyName, 120);

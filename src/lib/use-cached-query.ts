@@ -1,50 +1,65 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useDataCache } from "@/components/DataCacheContext";
+import { CACHE_STALE_MS, useDataCache } from "@/components/DataCacheContext";
 
+/**
+ * Queries and caches JSON API responses with instant cache hydration
+ * and background SWR revalidation once cached entries become stale.
+ */
 export function useCachedQuery<T>(
   cacheKey: string,
   url: string,
   fallbackError: string
 ) {
-  const { getCached, setCached, cacheVersion } = useDataCache();
-  const [data, setData] = useState<T | null>(() => getCached<T>(cacheKey) ?? null);
-  const [loading, setLoading] = useState<boolean>(() => !getCached<T>(cacheKey));
+  const { getCacheEntry, fetchWithDedupe, cacheVersion } = useDataCache();
+  const [data, setData] = useState<T | null>(
+    () => getCacheEntry<T>(cacheKey)?.data ?? null
+  );
+  const [loading, setLoading] = useState<boolean>(
+    () => !getCacheEntry<T>(cacheKey)
+  );
   const [errorMsg, setErrorMsg] = useState<string>("");
 
   const fetchNow = useCallback(async () => {
     setLoading(true);
     setErrorMsg("");
     try {
-      const res = await fetch(url, { cache: "no-store" });
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json.error || fallbackError);
-      }
-      setCached(cacheKey, json as T);
-      setData(json as T);
-      return json as T;
+      const result = await fetchWithDedupe<T>(cacheKey, url, fallbackError);
+      setData(result);
+      return result;
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : fallbackError);
       return null;
     } finally {
       setLoading(false);
     }
-  }, [cacheKey, fallbackError, setCached, url]);
+  }, [cacheKey, fallbackError, fetchWithDedupe, url]);
 
   useEffect(() => {
     let cancelled = false;
-    const cached = getCached<T>(cacheKey);
+    const entry = getCacheEntry<T>(cacheKey);
 
-    if (cached !== undefined) {
+    if (entry !== undefined) {
       queueMicrotask(() => {
         if (!cancelled) {
-          setData(cached);
+          setData(entry.data);
           setLoading(false);
           setErrorMsg("");
         }
       });
+
+      // Stale-while-revalidate silently without blocking the active view.
+      if (Date.now() - entry.updatedAt > CACHE_STALE_MS) {
+        fetchWithDedupe<T>(cacheKey, url, fallbackError)
+          .then((fresh) => {
+            if (!cancelled) {
+              setData(fresh);
+            }
+          })
+          .catch(() => {});
+      }
+
       return () => {
         cancelled = true;
       };
@@ -57,15 +72,10 @@ export function useCachedQuery<T>(
       }
     });
 
-    fetch(url, { cache: "no-store" })
-      .then(async (res) => {
-        const json = await res.json();
-        if (!res.ok) {
-          throw new Error(json.error || fallbackError);
-        }
+    fetchWithDedupe<T>(cacheKey, url, fallbackError)
+      .then((json) => {
         if (cancelled) return;
-        setCached(cacheKey, json as T);
-        setData(json as T);
+        setData(json);
         setErrorMsg("");
       })
       .catch((err) => {
@@ -81,7 +91,7 @@ export function useCachedQuery<T>(
     return () => {
       cancelled = true;
     };
-  }, [cacheKey, cacheVersion, fallbackError, getCached, setCached, url]);
+  }, [cacheKey, cacheVersion, fallbackError, fetchWithDedupe, getCacheEntry, url]);
 
   return { data, loading, errorMsg, refetch: fetchNow };
 }

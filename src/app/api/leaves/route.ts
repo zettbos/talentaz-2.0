@@ -2,7 +2,6 @@ import { and, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { leaveRequests, users } from "@/db/schema";
-import { ensureInitialized } from "@/db/seed";
 import {
   jsonError,
   parsePositiveInt,
@@ -16,7 +15,6 @@ export async function GET(request: Request) {
   const auth = await requireAuth();
   if (auth.error) return auth.error;
 
-  await ensureInitialized();
   const { searchParams } = new URL(request.url);
   const q = sanitizeString(searchParams.get("q") ?? "", 80);
   const statusFilter = sanitizeString(searchParams.get("status") ?? "all", 20);
@@ -48,45 +46,45 @@ export async function GET(request: Request) {
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-  const [{ total }] = await db
-    .select({ total: sql<number>`count(*)::int` })
-    .from(leaveRequests)
-    .innerJoin(users, eq(leaveRequests.userId, users.id))
-    .where(whereClause);
-
-  const rows = await db
-    .select({
-      id: leaveRequests.id,
-      requestCode: leaveRequests.requestCode,
-      userId: leaveRequests.userId,
-      employeeCode: users.employeeCode,
-      fullName: users.fullName,
-      position: users.position,
-      leaveType: leaveRequests.leaveType,
-      startDate: leaveRequests.startDate,
-      endDate: leaveRequests.endDate,
-      reason: leaveRequests.reason,
-      attachmentName: leaveRequests.attachmentName,
-      attachmentMime: leaveRequests.attachmentMime,
-      attachmentDataUrl: leaveRequests.attachmentDataUrl,
-      status: leaveRequests.status,
-      reviewNote: leaveRequests.reviewNote,
-      reviewedAt: leaveRequests.reviewedAt,
-      createdAt: leaveRequests.createdAt,
-    })
-    .from(leaveRequests)
-    .innerJoin(users, eq(leaveRequests.userId, users.id))
-    .where(whereClause)
-    .orderBy(desc(leaveRequests.createdAt))
-    .limit(limit)
-    .offset(offset);
-
-  const nextRequestCode = await generateNextCode(
-    leaveRequests,
-    leaveRequests.requestCode,
-    "IZN",
-    getWibParts().yearMonth
-  );
+  const [[{ total }], rows, nextRequestCode] = await Promise.all([
+    db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(leaveRequests)
+      .innerJoin(users, eq(leaveRequests.userId, users.id))
+      .where(whereClause),
+    db
+      .select({
+        id: leaveRequests.id,
+        requestCode: leaveRequests.requestCode,
+        userId: leaveRequests.userId,
+        employeeCode: users.employeeCode,
+        fullName: users.fullName,
+        position: users.position,
+        leaveType: leaveRequests.leaveType,
+        startDate: leaveRequests.startDate,
+        endDate: leaveRequests.endDate,
+        reason: leaveRequests.reason,
+        attachmentName: leaveRequests.attachmentName,
+        attachmentMime: leaveRequests.attachmentMime,
+        attachmentDataUrl: leaveRequests.attachmentDataUrl,
+        status: leaveRequests.status,
+        reviewNote: leaveRequests.reviewNote,
+        reviewedAt: leaveRequests.reviewedAt,
+        createdAt: leaveRequests.createdAt,
+      })
+      .from(leaveRequests)
+      .innerJoin(users, eq(leaveRequests.userId, users.id))
+      .where(whereClause)
+      .orderBy(desc(leaveRequests.createdAt))
+      .limit(limit)
+      .offset(offset),
+    generateNextCode(
+      leaveRequests,
+      leaveRequests.requestCode,
+      "IZN",
+      getWibParts().yearMonth
+    ),
+  ]);
 
   return NextResponse.json({
     requests: rows,
@@ -102,7 +100,6 @@ export async function POST(request: Request) {
   if (auth.error) return auth.error;
 
   try {
-    await ensureInitialized();
     const body = await request.json();
     const leaveType =
       body.leaveType === "sakit" || body.leaveType === "cuti"

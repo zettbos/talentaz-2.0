@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { SafeUser } from "@/lib/auth";
 import { compressLogoOrAvatar } from "@/lib/media-client";
 import { formatRupiah } from "@/lib/time";
 import { useCachedQuery } from "@/lib/use-cached-query";
-import { AppShell } from "./AppShell";
+import { useProtectedShell, useSyncShellMeta } from "./ProtectedShellContext";
 import { useDataCache } from "./DataCacheContext";
 import { useToast } from "./ToastContext";
 import { Modal } from "./Modal";
@@ -25,9 +26,22 @@ interface UsersListPayload {
   nextEmployeeCode: string;
 }
 
-export function KaryawanClient({ initialUser }: { initialUser: SafeUser }) {
+export function KaryawanClient({
+  initialUser: initialUserProp,
+}: {
+  initialUser?: SafeUser;
+}) {
+  const router = useRouter();
+  const { user: shellUser } = useProtectedShell();
+  const initialUser = initialUserProp ?? shellUser;
   const { invalidatePrefix } = useDataCache();
   const { showToast } = useToast();
+
+  useEffect(() => {
+    if (initialUser.role !== "admin") {
+      router.replace("/dashboard");
+    }
+  }, [initialUser.role, router]);
 
   const [searchInput, setSearchInput] = useState("");
   const [q, setQ] = useState("");
@@ -241,14 +255,19 @@ export function KaryawanClient({ initialUser }: { initialUser: SafeUser }) {
     }
   }
 
+  useSyncShellMeta({
+    onRefresh: () => {
+      invalidatePrefix("users");
+      void loadUsers();
+    },
+  });
+
+  if (initialUser.role !== "admin") {
+    return null;
+  }
+
   return (
-    <AppShell
-      user={initialUser}
-      onRefresh={() => {
-        invalidatePrefix("users");
-        void loadUsers();
-      }}
-    >
+    <>
       <div className="space-y-6">
         {/* Title & Add Button */}
         <section className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -980,6 +999,6 @@ export function KaryawanClient({ initialUser }: { initialUser: SafeUser }) {
           </form>
         )}
       </Modal>
-    </AppShell>
+    </>
   );
 }

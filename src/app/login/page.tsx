@@ -154,12 +154,19 @@ export default function LoginPage() {
         </form>
 
         <div className="mt-6 pt-4 border-t border-[#D4E4D5] text-xs text-[#465147] space-y-1">
-          <p className="font-medium text-[#1A1E1A]">Login Awal Admin:</p>
-          <p>
-            Username: <code className="px-1.5 py-0.5 rounded bg-[#E6F4E7] text-[#1A1E1A] font-semibold">admin</code>{" "}
-            | Password: <code className="px-1.5 py-0.5 rounded bg-[#E6F4E7] text-[#1A1E1A] font-semibold">admin123</code>
-          </p>
-          <p>Segera ganti password Admin setelah login pertama kali melalui menu Karyawan.</p>
+          {process.env.NODE_ENV !== "production" ? (
+            <>
+              <p className="font-medium text-[#1A1E1A]">Akun Uji Lokal (Development):</p>
+              <p>
+                Username: <code className="px-1.5 py-0.5 rounded bg-[#E6F4E7] text-[#1A1E1A] font-semibold">admin</code>{" "}
+                | Password: <code className="px-1.5 py-0.5 rounded bg-[#E6F4E7] text-[#1A1E1A] font-semibold">admin123</code>
+              </p>
+            </>
+          ) : (
+            <p>
+              Portal internal absensi dan kehadiran karyawan. Hubungi Admin HR apabila Anda memerlukan pembuatan akun atau reset password.
+            </p>
+          )}
         </div>
       </main>
     </div>

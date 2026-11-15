@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { SafeUser } from "@/lib/auth";
+import { normalizeCompanySettings } from "@/lib/settings-defaults";
+import { getWibParts } from "@/lib/time";
 import { useDataCache } from "./DataCacheContext";
 import { useToast } from "./ToastContext";
 import { Modal } from "./Modal";
@@ -45,10 +47,61 @@ export function AppShell({
 }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { clearAllCache } = useDataCache();
+  const { clearAllCache, prefetchQuery } = useDataCache();
   const { showToast } = useToast();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+
+  const handlePrefetchRoute = useCallback(
+    (href: string) => {
+      router.prefetch(href);
+
+      if (href === "/dashboard") {
+        prefetchQuery("dashboard", "/api/dashboard");
+        return;
+      }
+      if (href === "/absen") {
+        prefetchQuery(
+          "attendances:q=&s=all&d=&p=1",
+          "/api/attendances?q=&status=all&date=&page=1&limit=10"
+        );
+        return;
+      }
+      if (href === "/pengajuan") {
+        prefetchQuery(
+          "leaves:q=&s=all&t=all&p=1",
+          "/api/leaves?q=&status=all&leaveType=all&page=1&limit=10"
+        );
+        prefetchQuery(
+          "overtimes:q=&s=all&p=1",
+          "/api/overtimes?q=&status=all&page=1&limit=10"
+        );
+        return;
+      }
+      if (href === "/rekap") {
+        const defaultMonth = getWibParts().workDate.slice(0, 7);
+        prefetchQuery(
+          `reports:m=${defaultMonth}&sd=&ed=&q=&s=all&p=1`,
+          `/api/reports?month=${defaultMonth}&q=&status=all&page=1&limit=15`
+        );
+        return;
+      }
+      if (href === "/karyawan" && user.role === "admin") {
+        prefetchQuery(
+          "users:q=&r=&a=&p=1",
+          "/api/users?q=&role=&active=&page=1&limit=12"
+        );
+        return;
+      }
+      if (href === "/pengaturan" && user.role === "admin") {
+        prefetchQuery("settings", "/api/settings", (raw) => {
+          const obj = raw as { settings?: Record<string, unknown> | null };
+          return obj?.settings ? normalizeCompanySettings(obj.settings) : undefined;
+        });
+      }
+    },
+    [prefetchQuery, router, user.role]
+  );
 
   const navItems: NavItem[] = useMemo(() => {
     const items: NavItem[] = [
@@ -139,10 +192,14 @@ export function AppShell({
           <div className="flex items-center justify-between gap-3">
             <Link
               href="/dashboard"
+              prefetch={true}
+              title={companyName}
+              onMouseEnter={() => handlePrefetchRoute("/dashboard")}
+              onTouchStart={() => handlePrefetchRoute("/dashboard")}
               className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-full border border-[#D4E4D5] bg-white text-[#1A1E1A] font-semibold text-sm tracking-tight hover:border-[#246326] transition-colors shrink-0"
             >
               <BrandMark className="w-5 h-5 text-[#1F211E]" />
-              <span>{companyName === "TalentaZ 2.0" ? "TalentaZ 2.0" : "TalentaZ 2.0"}</span>
+              <span>TalentaZ 2.0</span>
             </Link>
 
             {/* Desktop horizontal pill navigation */}
@@ -157,6 +214,10 @@ export function AppShell({
                   <Link
                     key={item.href}
                     href={item.href}
+                    prefetch={true}
+                    onMouseEnter={() => handlePrefetchRoute(item.href)}
+                    onTouchStart={() => handlePrefetchRoute(item.href)}
+                    onFocus={() => handlePrefetchRoute(item.href)}
                     aria-current={active ? "page" : undefined}
                     className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
                       active
@@ -198,6 +259,9 @@ export function AppShell({
               {user.role === "admin" && (
                 <Link
                   href="/pengaturan"
+                  prefetch={true}
+                  onMouseEnter={() => handlePrefetchRoute("/pengaturan")}
+                  onTouchStart={() => handlePrefetchRoute("/pengaturan")}
                   className="hidden md:inline-flex lg:hidden items-center gap-1.5 min-h-[44px] px-3.5 rounded-full border border-[#D4E4D5] bg-white text-[#1A1E1A] text-xs font-medium hover:bg-[#F3F8F3]"
                 >
                   <SlidersIcon className="w-4 h-4" />
@@ -254,6 +318,10 @@ export function AppShell({
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch={true}
+                  onMouseEnter={() => handlePrefetchRoute(item.href)}
+                  onTouchStart={() => handlePrefetchRoute(item.href)}
+                  onFocus={() => handlePrefetchRoute(item.href)}
                   aria-current={active ? "page" : undefined}
                   className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
                     active
@@ -288,6 +356,9 @@ export function AppShell({
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={true}
+                onTouchStart={() => handlePrefetchRoute(item.href)}
+                onFocus={() => handlePrefetchRoute(item.href)}
                 aria-current={active ? "page" : undefined}
                 className={`min-h-[48px] rounded-xl flex flex-col items-center justify-center gap-0.5 px-1 text-[11px] font-medium transition-colors relative ${
                   active
@@ -356,6 +427,9 @@ export function AppShell({
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch={true}
+                  onMouseEnter={() => handlePrefetchRoute(item.href)}
+                  onTouchStart={() => handlePrefetchRoute(item.href)}
                   onClick={() => setDrawerOpen(false)}
                   className={`min-h-[46px] px-4 rounded-xl flex items-center justify-between text-sm font-medium border transition-colors ${
                     active
