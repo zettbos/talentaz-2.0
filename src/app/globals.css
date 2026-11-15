@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-plus-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --color-sage-canvas: #d9eedb;
+  --color-sage-soft: #eef6ee;
+  --color-charcoal: #1f211e;
+  --color-leaf-btn: #246326;
+  --color-leaf-chart: #347f2f;
+}
+
+@layer base {
+  html,
+  body {
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
+  a[href],
+  button:not(:disabled),
+  summary,
+  select:not(:disabled),
+  label[for],
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled,
+  input:disabled,
+  textarea:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid #246326;
+    outline-offset: 2px;
+  }
+}
+
+.sage-workspace-bg {
+  background: linear-gradient(145deg, #c6e6c8 0%, #e7f4e8 48%, #d3ecd5 100%);
+}
+
+.sage-shell-surface {
+  background: linear-gradient(155deg, rgba(246, 251, 246, 0.94) 0%, rgba(226, 243, 227, 0.92) 100%);
+}
+
+.striped-sage-track {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(36, 99, 38, 0.08),
+    rgba(36, 99, 38, 0.08) 6px,
+    rgba(255, 255, 255, 0.7) 6px,
+    rgba(255, 255, 255, 0.7) 12px
+  );
+}
+
+.striped-green-fill {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    #347f2f,
+    #347f2f 7px,
+    #2b6e27 7px,
+    #2b6e27 14px
+  );
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
